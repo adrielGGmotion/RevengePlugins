@@ -24,18 +24,16 @@ function parseLink(link: string) {
 	return `/${path[1]}`;
 }
 
-function getPluginsFilePath() {
-	const docsDir = RNFileModule?.getConstants?.()?.DocumentsDirPath
-		?? RNFileModule?.DocumentsDirPath;
-	return `${docsDir}/vendetta/VENDETTA_PLUGINS.json`;
-}
+const PLUGINS_STORE_PATH = "vd_mmkv/VENDETTA_PLUGINS";
 
 async function readPluginsStore(): Promise<Record<string, any>> {
 	try {
-		const path = getPluginsFilePath();
-		const exists = await RNFileModule.fileExists(path);
+		const docsDir = RNFileModule?.getConstants?.()?.DocumentsDirPath
+			?? RNFileModule?.DocumentsDirPath;
+		const fullPath = `${docsDir}/${PLUGINS_STORE_PATH}`;
+		const exists = await RNFileModule.fileExists(fullPath);
 		if (!exists) return {};
-		const content = await RNFileModule.readFile(path, "utf8");
+		const content = await RNFileModule.readFile(fullPath, "utf8");
 		return JSON.parse(content) ?? {};
 	} catch {
 		return {};
@@ -45,7 +43,7 @@ async function readPluginsStore(): Promise<Record<string, any>> {
 async function writePluginsStore(data: Record<string, any>) {
 	await RNFileModule.writeFile(
 		"documents",
-		"vendetta/VENDETTA_PLUGINS.json",
+		"vd_mmkv/VENDETTA_PLUGINS",
 		JSON.stringify(data),
 		"utf8",
 	);
