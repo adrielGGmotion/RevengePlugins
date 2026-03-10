@@ -1,6 +1,6 @@
 import { findByName } from "@vendetta/metro";
 import { ReactNative as RN } from "@vendetta/metro/common";
-import { before, instead } from "@vendetta/patcher";
+import { before } from "@vendetta/patcher";
 import { getAssetByID, getAssetIDByName } from "@vendetta/ui/assets";
 
 import type { PlusStructure } from "$/typings";
@@ -40,119 +40,113 @@ export default function patchIcons(
 		}
 		if (iconpack) state.patches.push(PatchType.Iconpack);
 
-		// FIXME the great component functionification of 2025
-		patches.push(
-			instead("Image", RN, (_args, orig) => {
-				const args = _args.slice();
-				const [props] = args;
+		const { onJsxCreate, deleteJsxCreate } = (window as any).bunny.api.react.jsx;
 
-				if (props.ignore) return orig(...args);
-				const { source } = props;
+		const imageCallback = (_Component: any, ret: any) => {
+			const props = ret.props;
+			if (!props || props.ignore) return;
+			const { source } = props;
 
-				let asset: BunnyAsset | null = null;
+			let asset: BunnyAsset | null = null;
 
-				// theme mod icons (bunny, revenge)
-				const modIcon = Object.entries(modIcons).find(
-					([_, { raw }]) => source?.uri === raw,
+			// theme mod icons (bunny, revenge)
+			const modIcon = Object.entries(modIcons).find(
+				([_, { raw }]) => source?.uri === raw,
+			);
+			if (modIcon) {
+				asset = {
+					httpServerLocation: "//_",
+					width: 64,
+					height: 64,
+					name: modIcon[0],
+					type: "png",
+				};
+			} // custom themed icons API
+			else if (
+				source
+				&& typeof source.uri === "string"
+				&& typeof source.width === "number"
+				&& typeof source.height === "number"
+				&& typeof source.file === "string"
+				&& source.allowIconTheming
+			) {
+				const [file, ...parent] = source.file
+					.split("/")
+					.reverse() as string[];
+				const [ext, ...base] = file.split(".").reverse();
+
+				asset = {
+					httpServerLocation: `//_/external${parent[0] ? "/" : ""}${parent.reverse().join("/")}`,
+					width: source.width,
+					height: source.height,
+					name: base.reverse().join("."),
+					type: ext,
+				};
+			} // any other asset
+			else if (typeof source === "number") {
+				asset = getAssetByID(source) as any;
+			}
+
+			if (!asset?.httpServerLocation) return;
+
+			const assetIconpackLocation = iconpack
+				&& fixPath(
+					[
+						...asset.httpServerLocation.split("/").slice(2),
+						`${asset.name}${iconpack.suffix}.${asset.type}`,
+					].join("/"),
 				);
-				if (modIcon) {
-					asset = {
-						httpServerLocation: "//_",
-						width: 64,
-						height: 64,
-						name: modIcon[0],
-						type: "png",
-					};
-				} // custom themhed icons API
-				else if (
-					source
-					&& typeof source.uri === "string"
-					&& typeof source.width === "number"
-					&& typeof source.height === "number"
-					&& typeof source.file === "string"
-					&& source.allowIconTheming
-				) {
-					const [file, ...parent] = source.file
-						.split("/")
-						.reverse() as string[];
-					const [ext, ...base] = file.split(".").reverse();
+			const useIconpack = assetIconpackLocation
+				&& (tree.length ? tree.includes(assetIconpackLocation) : true);
 
-					asset = {
-						httpServerLocation: `//_/external${parent[0] ? "/" : ""}${parent.reverse().join("/")}`,
-						width: source.width,
-						height: source.height,
-						name: base.reverse().join("."),
-						type: ext,
-					};
-				} // any other asset
-				else if (typeof source === "number") {
-					asset = getAssetByID(source) as any;
-				}
-
-				if (!asset?.httpServerLocation) return orig(...args);
-
-				const assetIconpackLocation = iconpack
-					&& fixPath(
-						[
-							...asset.httpServerLocation.split("/").slice(2),
-							`${asset.name}${iconpack.suffix}.${asset.type}`,
-						].join("/"),
-					);
-				const useIconpack = assetIconpackLocation
-					&& (tree.length ? tree.includes(assetIconpackLocation) : true);
-
-				let overlay: any;
-				if (
-					plus.customOverlays
-					&& !useIconpack
-					&& typeof source === "number"
-				) {
-					overlay = getIconOverlay(plus, source, props.style);
-					if (overlay) {
-						if (overlay.replace) {
-							props.source = getAssetIDByName(overlay.replace);
-						}
-						if (overlay.style) {
-							props.style = [props.style, overlay.style];
-						}
+			let overlay: any;
+			if (
+				plus.customOverlays
+				&& !useIconpack
+				&& typeof source === "number"
+			) {
+				overlay = getIconOverlay(plus, source, props.style);
+				if (overlay) {
+					if (overlay.replace) {
+						props.source = getAssetIDByName(overlay.replace);
+					}
+					if (overlay.style) {
+						props.style = [props.style, overlay.style];
 					}
 				}
+			}
 
-				if (plus.icons) {
-					const tint = getIconTint(plus, source, asset.name);
-					if (tint) {
-						props.style = [
-							props.style,
-							{
-								tintColor: tint,
-							},
-						];
-					}
-				}
-
-				if (useIconpack) {
-					props.source = {
-						uri: iconpack.load + assetIconpackLocation,
-						headers: {
-							"cache-contorl": "public, max-age=3600",
+			if (plus.icons) {
+				const tint = getIconTint(plus, source, asset.name);
+				if (tint) {
+					props.style = [
+						props.style,
+						{
+							tintColor: tint,
 						},
-						width: asset.width,
-						height: asset.height,
-						original: props.source,
-					};
+					];
 				}
+			}
 
-				const ret = orig(...args);
+			if (useIconpack) {
+				props.source = {
+					uri: iconpack.load + assetIconpackLocation,
+					headers: {
+						"cache-control": "public, max-age=3600",
+					},
+					width: asset.width,
+					height: asset.height,
+					original: props.source,
+				};
+			}
 
-				return overlay?.children
-					? (
-						<RN.View>
-							{ret}
-							{overlay.children}
-						</RN.View>
-					)
-					: ret;
-			}),
-		);
+			if (overlay?.children) {
+				ret.type = RN.View;
+				ret.props = { children: [ret, overlay.children] };
+			}
+		};
+
+		onJsxCreate("Image", imageCallback);
+		patches.push(() => deleteJsxCreate("Image", imageCallback));
 	}
 }
