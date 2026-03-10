@@ -1,6 +1,6 @@
-import { findByName } from "@vendetta/metro";
+import { findByName, findByProps } from "@vendetta/metro";
 import { ReactNative as RN } from "@vendetta/metro/common";
-import { before } from "@vendetta/patcher";
+import { before, instead } from "@vendetta/patcher";
 import { getAssetByID, getAssetIDByName } from "@vendetta/ui/assets";
 
 import type { PlusStructure } from "$/typings";
@@ -40,7 +40,6 @@ export default function patchIcons(
 		}
 		if (iconpack) state.patches.push(PatchType.Iconpack);
 
-		const { onJsxCreate, deleteJsxCreate } = (window as any).bunny.api.react.jsx;
 
 		const imageCallback = (_Component: any, ret: any) => {
 			const props = ret.props;
@@ -146,7 +145,22 @@ export default function patchIcons(
 			}
 		};
 
-		onJsxCreate("Image", imageCallback);
-		patches.push(() => deleteJsxCreate("Image", imageCallback));
+		// Patch the React JSX runtime directly to intercept Image renders.
+		// onJsxCreate is Kettu-internal and not exposed to plugins, so we hook
+		// the jsx/jsxs functions ourselves the same way Kettu does it internally.
+		const jsxRuntime = findByProps("jsx", "jsxs");
+		if (jsxRuntime) {
+			const jsxPatcher = (args: any[], orig: (...a: any[]) => any) => {
+				const ret = orig(...args);
+				const [Component] = args;
+				if (ret && typeof Component === "function" && Component.displayName === "Image") {
+					imageCallback(Component, ret);
+				}
+				return ret;
+			};
+			const u1 = instead("jsx", jsxRuntime, jsxPatcher);
+			const u2 = instead("jsxs", jsxRuntime, jsxPatcher);
+			patches.push(u1, u2);
+		}
 	}
 }
