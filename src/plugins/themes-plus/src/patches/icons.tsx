@@ -14,6 +14,7 @@ import { fixPath } from "../stuff/util";
 import type { BunnyAsset, IconpackConfig } from "../types";
 
 const Status = findByName("Status", false);
+const jsxRuntime = findByProps("jsx", "jsxs");
 
 export default function patchIcons(
 	plus: PlusStructure,
@@ -145,10 +146,6 @@ export default function patchIcons(
 			}
 		};
 
-		// Patch the React JSX runtime directly to intercept Image renders.
-		// onJsxCreate is Kettu-internal and not exposed to plugins, so we hook
-		// the jsx/jsxs functions ourselves the same way Kettu does it internally.
-		const jsxRuntime = findByProps("jsx", "jsxs");
 		if (jsxRuntime) {
 			const jsxPatcher = (args: any[], orig: (...a: any[]) => any) => {
 				const ret = orig(...args);
