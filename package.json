@@ -25,6 +25,7 @@
 		"dts-bundle": "^0.7.3",
 		"emoji-regex": "^10.4.0",
 		"esbuild": "^0.20.1",
+		"fflate": "^0.8.2",
 		"fuzzysort": "^3.1.0",
 		"image-size": "2.0.2",
 		"mime": "^4.0.7",

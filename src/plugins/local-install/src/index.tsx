@@ -1,3 +1,4 @@
+import { unzipSync, strFromU8 } from "fflate";
 import { findByProps } from "@vendetta/metro";
 import { ReactNative as RN } from "@vendetta/metro/common";
 import { showToast } from "@vendetta/ui/toasts";
@@ -20,106 +21,116 @@ function getNativeModule(...names: string[]) {
 const RNFileModule = getNativeModule("NativeFileModule", "DCDFileManager") as any;
 
 function parseLink(link: string) {
-	const path = link.split("://");
-	return `/${path[1]}`;
+	return `/${link.split("://")[1]}`;
 }
 
-const PLUGINS_STORE_PATH = "vd_mmkv/VENDETTA_PLUGINS";
+const PLUGINS_STORE = "vd_mmkv/VENDETTA_PLUGINS";
 
 async function readPluginsStore(): Promise<Record<string, any>> {
 	try {
-		const docsDir = RNFileModule?.getConstants?.()?.DocumentsDirPath
-			?? RNFileModule?.DocumentsDirPath;
-		const fullPath = `${docsDir}/${PLUGINS_STORE_PATH}`;
-		const exists = await RNFileModule.fileExists(fullPath);
-		if (!exists) return {};
-		const content = await RNFileModule.readFile(fullPath, "utf8");
-		return JSON.parse(content) ?? {};
+		const docsDir = RNFileModule?.getConstants?.()?.DocumentsDirPath ?? RNFileModule?.DocumentsDirPath;
+		const fullPath = `${docsDir}/${PLUGINS_STORE}`;
+		if (!await RNFileModule.fileExists(fullPath)) return {};
+		return JSON.parse(await RNFileModule.readFile(fullPath, "utf8")) ?? {};
 	} catch {
 		return {};
 	}
 }
 
 async function writePluginsStore(data: Record<string, any>) {
-	await RNFileModule.writeFile(
-		"documents",
-		"vd_mmkv/VENDETTA_PLUGINS",
-		JSON.stringify(data),
-		"utf8",
-	);
+	await RNFileModule.writeFile("documents", PLUGINS_STORE, JSON.stringify(data), "utf8");
+}
+
+async function readFileAsBase64(uri: string): Promise<Uint8Array> {
+	const b64 = await RNFileModule.readFile(parseLink(uri), "base64");
+	const bin = atob(b64);
+	const bytes = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+	return bytes;
 }
 
 async function pickAndInstall() {
 	if (!DocumentPicker && !DocumentsNew) {
-		showToast("File picker not available on this device", getAssetIDByName("XIcon"));
+		showToast("File picker not available", getAssetIDByName("XIcon"));
 		return;
 	}
 
-	let js: string | null = null;
-	let pluginName = "unknown";
-
 	try {
+		let fileCopyUri: string | null = null;
+		let fileName: string | null = null;
+
 		if (DocumentPicker) {
-			const { fileCopyUri, name } = await DocumentPicker.pickSingle({
+			const result = await DocumentPicker.pickSingle({
 				type: [DocumentPicker.types.allFiles],
 				mode: "import",
 				copyTo: "cachesDirectory",
 			});
-
-			if (!fileCopyUri) {
-				showToast("Could not read file", getAssetIDByName("XIcon"));
-				return;
-			}
-
-			if (!name?.endsWith(".js")) {
-				showToast("Select a .js plugin file", getAssetIDByName("XIcon"));
-				return;
-			}
-
-			js = await RNFileModule.readFile(parseLink(fileCopyUri), "utf8");
-			pluginName = name.replace(".js", "");
+			fileCopyUri = result.fileCopyUri;
+			fileName = result.name;
 		} else if (DocumentsNew) {
 			const [{ uri, name, error }] = await DocumentsNew.pick({
 				type: DocumentsNew.types.allFiles,
 				allowVirtualFiles: true,
 				mode: "import",
 			});
-
 			if (error) throw new Error(error);
-			if (!name?.endsWith(".js")) {
-				showToast("Select a .js plugin file", getAssetIDByName("XIcon"));
-				return;
-			}
-
 			const [copyResult] = await DocumentsNew.keepLocalCopy({
 				files: [{ fileName: name, uri }],
 				destination: "cachesDirectory",
 			});
-
 			if (copyResult.status !== "success") throw new Error(copyResult.copyError);
-
-			js = await RNFileModule.readFile(parseLink(copyResult.localUri), "utf8");
-			pluginName = name.replace(".js", "");
+			fileCopyUri = copyResult.localUri;
+			fileName = name;
 		}
 
-		if (!js) return;
+		if (!fileCopyUri || !fileName) return;
 
-		const pluginId = `local:${pluginName}/`;
+		let js: string | null = null;
+		let manifest: any = null;
+
+		if (fileName.endsWith(".zip")) {
+			// Read as base64 and decode to bytes for fflate
+			const bytes = await readFileAsBase64(fileCopyUri);
+			const unzipped = unzipSync(bytes);
+
+			// Find manifest.json and index.js inside the zip
+			const manifestEntry = Object.keys(unzipped).find(k => k.endsWith("manifest.json"));
+			const jsEntry = Object.keys(unzipped).find(k => k.endsWith("index.js"));
+
+			if (!manifestEntry || !jsEntry) {
+				showToast("Zip must contain manifest.json and index.js", getAssetIDByName("XIcon"));
+				return;
+			}
+
+			manifest = JSON.parse(strFromU8(unzipped[manifestEntry]));
+			js = strFromU8(unzipped[jsEntry]);
+		} else if (fileName.endsWith(".js")) {
+			js = await RNFileModule.readFile(parseLink(fileCopyUri), "utf8");
+			manifest = {
+				name: fileName.replace(".js", ""),
+				description: "Locally installed plugin",
+				authors: [{ name: "local", id: "0" }],
+				main: "index.js",
+			};
+		} else {
+			showToast("Select a .zip or .js plugin file", getAssetIDByName("XIcon"));
+			return;
+		}
+
+		if (!js || !manifest) return;
+
+		// Use a fake https URL as the plugin ID so Kettu treats it normally
+		const pluginId = `https://local.install/${manifest.name}/`;
 		const store = await readPluginsStore();
 
 		if (store[pluginId]) {
-			showToast(`"${pluginName}" is already installed`, getAssetIDByName("XIcon"));
+			showToast(`"${manifest.name}" is already installed`, getAssetIDByName("XIcon"));
 			return;
 		}
 
 		store[pluginId] = {
 			id: pluginId,
-			manifest: {
-				name: pluginName,
-				description: "Locally installed plugin",
-				authors: [{ name: "local", id: "0" }],
-				main: "index.js",
-			},
+			manifest,
 			enabled: true,
 			update: false,
 			js,
@@ -129,11 +140,10 @@ async function pickAndInstall() {
 
 		try {
 			await (window as any).vendetta?.plugins?.startPlugin?.(pluginId);
+			showToast(`Installed "${manifest.name}"!`, getAssetIDByName("CheckmarkLargeIcon"));
 		} catch {
-			// May need a restart
+			showToast(`Installed "${manifest.name}"! Restart to activate.`, getAssetIDByName("CheckmarkLargeIcon"));
 		}
-
-		showToast(`Installed "${pluginName}"! Restart if it doesn't appear.`, getAssetIDByName("CheckmarkLargeIcon"));
 	} catch (err: any) {
 		if (!DocumentPicker?.isCancel?.(err)) {
 			showToast(`Error: ${err?.message ?? String(err)}`, getAssetIDByName("XIcon"));
@@ -150,7 +160,7 @@ export const settings = () => (
 			Local Plugin Installer
 		</RN.Text>
 		<RN.Text style={{ color: "#aaa", fontSize: 14, marginBottom: 16 }}>
-			Install a plugin directly from a .js file on your device. The plugin won't auto-update.
+			Install a plugin from a .zip (with manifest.json + index.js) or a .js file.
 		</RN.Text>
 		<RN.TouchableOpacity
 			onPress={pickAndInstall}
@@ -162,7 +172,7 @@ export const settings = () => (
 			}}
 		>
 			<RN.Text style={{ color: "white", fontWeight: "bold", fontSize: 15 }}>
-				Pick Plugin File (.js)
+				Pick Plugin File (.zip or .js)
 			</RN.Text>
 		</RN.TouchableOpacity>
 	</RN.View>
