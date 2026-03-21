@@ -9,11 +9,11 @@
 
 ## Tutorial
 
-Let's say you're making a plugin and want to use an icon of a train. Since the Discord mobile app doesn't have one, you use a custom icon like this:
+Let's say you're making a plugin and want to use an icon of a inbox. Since the Discord mobile app doesn't have one, you use a custom icon like this:
 
-| Example Train Icon             |
+| Example Inbox Icon             |
 | ------------------------------ |
-| ![Train Icon](./TrainIcon.png) |
+| ![Inbox Icon](./InboxIcon.png) |
 
 ```jsx
 <Image
@@ -24,7 +24,7 @@ Let's say you're making a plugin and want to use an icon of a train. Since the D
 ```
 
 > [!TIP]
-> Most redesigned Discord icons use #4E5058 as their tint color
+> Most redesigned Discord icons use #EFEFF1 as their tint color
 
 This works, but the icon can't be themed using an iconpack. To do that, you must add `width`, `height` and `path` properties to your icon object, like this:
 
@@ -34,15 +34,15 @@ This works, but the icon can't be themed using an iconpack. To do that, you must
 		uri: "data:image/png;base64,...",
 		width: 72,
 		height: 72,
-		path: "YourAwesomePlugin/TrainIcon.png",
+		path: "YourAwesomePlugin/InboxIcon.png",
 	}}
 />;
 ```
 
 > [!TIP]
-> You should follow Discord's icon naming scheme, PascalCase description of object ending with Icon (TrainIcon)
+> You should follow Discord's icon naming scheme, PascalCase description of object ending with Icon (InboxIcon)
 
-And lastly, set `allowIconTheming` to `true`, like so:
+Lastly, set `allowIconTheming` to `true`, like so:
 
 ```jsx
 <Image
@@ -50,10 +50,10 @@ And lastly, set `allowIconTheming` to `true`, like so:
 		uri: "data:image/png;base64,...",
 		width: 72,
 		height: 72,
-		path: "YourAwesomePlugin/TrainIcon.png",
+		path: "YourAwesomePlugin/InboxIcon.png",
 		allowIconTheming: true,
 	}}
 />;
 ```
 
-And you're done! Iconpack makers can now change the icon by editing the file at `<iconpack root>/_/external/YourAwesomePlugin/TrainIcon.png`.
+And you're done! Iconpack makers can now change the icon by editing the file at `<iconpack root>/_/external/YourAwesomePlugin/InboxIcon.png`.
